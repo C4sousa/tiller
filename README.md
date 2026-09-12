@@ -107,25 +107,13 @@ tiller/
 
 ### Where to start
 
-**For the overall analytical story**
-
-→ `notebooks/02_eda_complete.ipynb`
-
 **For opportunity selection**
 
-→ `notebooks/03_question_selection.ipynb`
-
-**For the final demand forecasting analysis**
-
-→ `notebooks/03b_demand_forecasting.ipynb`
+→ [Phase 3 — Opportunity Selection](notebooks/Phase_03_question_selection.ipynb)
 
 **For the executive presentation**
 
-→ `presentations/Tiller_Phase_3__10-Minute_Presentation.pdf`
-
-**For the earlier opportunity exploration**
-
-→ `presentations/Tiller_Phase2_Opportunity_Exploration.pdf`
+→ [Phase 3 — Product Handover Presentation](presentations/Tiller_Phase_03__10-Minutes_Presentation_Prodcut_Handover.pdf)
 
 ---
 
