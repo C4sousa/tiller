@@ -1,6 +1,47 @@
+# Python
 __pycache__/
-*.pyc
-.env
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+*.egg-info/
+dist/
+build/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Data files (too large for git)
+data/*.csv
+data/*.parquet
+data/*.feather
+data/*.pkl
+
+# Charts (regenerable from notebooks)
+# Uncomment if you want to track charts in git
+# charts/*.png
+
+# OS files
 .DS_Store
-analysis/
-*.ipynb_checkpoints
+Thumbs.db
+*.swp
+*.swo
+
+# Environment variables
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
