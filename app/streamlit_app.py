@@ -33,6 +33,7 @@ def load_weekly_orders(path: Path) -> pd.DataFrame:
     df = pd.read_csv(path, parse_dates=["week"])
     df["id_store"] = df["id_store"].astype(str)
     df["orders"] = pd.to_numeric(df["orders"], errors="coerce")
+    df["week"] = df["week"].dt.normalize()
     return df.dropna(subset=["week", "orders"]).sort_values(["id_store", "week"])
 
 if not DATA_PATH.exists():
@@ -52,8 +53,6 @@ if store_summary.empty:
     st.error("No store has enough weekly history to create the forecast.")
     st.stop()
 
-# Demo design: one store/account only, chosen internally.
-# Use the highest-volume eligible store so the UI has a complete weekly history.
 STORE_ID = store_summary.index[0]
 store = weekly.loc[weekly["id_store"] == STORE_ID].copy().sort_values("week")
 
@@ -66,9 +65,6 @@ latest_actual = int(store.iloc[-1]["orders"])
 previous_week = int(store.iloc[-2]["orders"])
 two_weeks_ago = int(store.iloc[-3]["orders"])
 
-# Phase 3-aligned prototype rules:
-# next week = previous observed week's demand;
-# following week = demand two weeks before the latest observed week.
 next_week_forecast = latest_actual
 following_week_forecast = two_weeks_ago
 two_week_total = next_week_forecast + following_week_forecast
@@ -115,9 +111,9 @@ with right:
     st.markdown(
         f"""
         <div style="display:flex;justify-content:flex-end;align-items:center;gap:12px;height:36px">
-          <span style="color:{BLACK};font-size:20px;font-weight:400">Your store</span>
+          <span style="color:{BLACK};font-size:20px;font-weight:400">Café Lumière</span>
           <span style="width:36px;height:36px;border-radius:999px;background:{BLUE};color:white;
-            display:inline-flex;align-items:center;justify-content:center;font-size:16px;font-weight:500">TS</span>
+            display:inline-flex;align-items:center;justify-content:center;font-size:16px;font-weight:500">CL</span>
         </div>
         """,
         unsafe_allow_html=True,
@@ -202,16 +198,29 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# Chart: latest 12 actual weeks + 2 forecast weeks
-history = store.tail(12).copy()
+# Chart: Show last 10 weeks of history + 2 forecast weeks
+n_history_weeks = 10
+history = store.tail(n_history_weeks).copy()
 forecast_dates = [next_week_date, following_week_date]
 forecast_values = [next_week_forecast, following_week_forecast]
 
 fig = go.Figure()
 
+# Get actual dates from data
+history_dates = history["week"].tolist()
+forecast_date_objs = [next_week_date, following_week_date]
+
+# Combine all dates for X-axis
+all_dates = history_dates + forecast_date_objs
+
+# Show every other week label (best practice for 10+ weeks)
+tick_indices = list(range(0, len(all_dates), 2))
+tick_vals = [all_dates[i] for i in tick_indices]
+tick_text = [d.strftime("%d %b") for d in tick_vals]
+
 fig.add_trace(
     go.Scatter(
-        x=history["week"],
+        x=history_dates,
         y=history["orders"],
         mode="lines+markers",
         name="Actual",
@@ -221,9 +230,11 @@ fig.add_trace(
     )
 )
 
+# Connect last actual to first forecast point
+last_actual_date = history_dates[-1]
 fig.add_trace(
     go.Scatter(
-        x=[history["week"].iloc[-1]] + forecast_dates,
+        x=[last_actual_date] + forecast_date_objs,
         y=[history["orders"].iloc[-1]] + forecast_values,
         mode="lines+markers",
         name="Forecast",
@@ -231,23 +242,6 @@ fig.add_trace(
         marker=dict(size=9, color=BLUE),
         hovertemplate="<b>%{x|%d %b %Y}</b><br>%{y:,} orders<br>Forecast<extra></extra>",
     )
-)
-
-fig.add_vline(
-    x=history["week"].iloc[-1].timestamp() * 1000,
-    line_dash="dot",
-    line_color="#9CA3AF",
-    annotation_text="Latest actual",
-    annotation_position="top left",
-    annotation_font_color="#9CA3AF",
-)
-
-fig.add_vrect(
-    x0=next_week_date.timestamp() * 1000,
-    x1=(following_week_date + pd.Timedelta(days=7)).timestamp() * 1000,
-    fillcolor=BLUE,
-    opacity=0.06,
-    line_width=0,
 )
 
 max_y = max(history["orders"].max(), max(forecast_values))
@@ -260,7 +254,13 @@ fig.update_layout(
     plot_bgcolor="#FFFFFF",
     legend=dict(orientation="h", y=-0.2, x=0.5, xanchor="center"),
     hovermode="x unified",
-    xaxis=dict(showgrid=False, tickfont=dict(size=15, color=BLACK), tickformat="%d %b"),
+    xaxis=dict(
+        showgrid=False,
+        tickfont=dict(size=13, color=BLACK),
+        tickmode="array",
+        tickvals=tick_vals,
+        ticktext=tick_text,
+    ),
     yaxis=dict(
         range=[0, max_y * 1.22],
         gridcolor="#E7E7E7",
