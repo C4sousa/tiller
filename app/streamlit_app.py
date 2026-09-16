@@ -11,6 +11,7 @@ GRID = "#ECEBE6"
 CARD_TOP = "#F6F7FB"
 GREEN = "#00A552"
 AMBER = "#9E3900"
+RED = "#ef4444"
 
 st.set_page_config(page_title="Demand Forecast", layout="wide", initial_sidebar_state="collapsed")
 st.markdown(
@@ -82,6 +83,17 @@ next_week_change = pct_change(next_week_forecast, baseline_next_week)
 following_week_change = pct_change(following_week_forecast, baseline_following_week)
 total_change = pct_change(two_week_total, baseline_two_week)
 
+# Reliability state based on Phase 3 H6 threshold (41.9%)
+wow_change = abs(next_week_change)
+H6_THRESHOLD = 41.9
+
+if wow_change <= H6_THRESHOLD:
+    reliability_1week_label = "Stable"
+    reliability_1week_text = "Recent demand steady"
+else:
+    reliability_1week_label = "Use caution"
+    reliability_1week_text = "Recent demand volatile"
+
 next_week_date = latest_week + pd.Timedelta(days=7)
 following_week_date = latest_week + pd.Timedelta(days=14)
 
@@ -123,6 +135,7 @@ st.markdown("<div style='height:24px'></div>", unsafe_allow_html=True)
 
 def forecast_card(title, value, pct, baseline, status_color, status_label, status_sub):
     arrow = "↑" if pct >= 0 else "↓"
+    pill_color = GREEN if pct > 0.5 else (RED if pct < -0.5 else MUTED)
     return f"""
 <div style="border-radius:16px;overflow:hidden;background:#fff">
   <div style="
@@ -143,7 +156,7 @@ def forecast_card(title, value, pct, baseline, status_color, status_label, statu
       <div style="color:{BLACK};font-size:56px;font-weight:700;line-height:1;
         letter-spacing:-2px;margin:0;font-family:Roboto,system-ui,sans-serif">{value:,}</div>
       <div style="display:flex;flex-direction:column;gap:2px;padding-top:6px">
-        <div style="color:{BLUE};font-size:16px;font-weight:500;line-height:1.2">{arrow} {abs(pct):.1f}%</div>
+        <div style="color:{pill_color};font-size:16px;font-weight:500;line-height:1.2">{arrow} {abs(pct):.1f}%</div>
         <div style="color:{BLUE};font-size:16px;font-weight:500;line-height:1.2">{baseline}</div>
       </div>
     </div>
@@ -173,8 +186,8 @@ with c1:
             next_week_change,
             "vs previous week",
             GREEN,
-            "Stable",
-            "Recent demand steady",
+            reliability_1week_label,
+            reliability_1week_text,
         ),
         unsafe_allow_html=True,
     )
