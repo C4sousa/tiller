@@ -99,7 +99,7 @@ next_week_date = latest_week + pd.Timedelta(days=7)
 following_week_date = latest_week + pd.Timedelta(days=14)
 
 # Navbar
-logo = APP_DIR / "tiller_logo.png"
+logo = APP_DIR / "Tiller_logo.png"
 if logo.exists():
     import base64
     b64 = base64.b64encode(logo.read_bytes()).decode()
