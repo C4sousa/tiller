@@ -1,7 +1,8 @@
-import streamlit as st
-import plotly.graph_objects as go
+"""Tiller Demand Forecast — static-data MVP."""
 from pathlib import Path
-import base64
+import pandas as pd
+import plotly.graph_objects as go
+import streamlit as st
 
 BLUE = "#2E398C"
 BLACK = "#000000"
@@ -24,28 +25,79 @@ header[data-testid='stHeader']{display:none}
     unsafe_allow_html=True,
 )
 
-DATA = {
-    "series": [
-        ("May 5", 1100, "actual"),
-        ("May 12", 1450, "actual"),
-        ("May 19", 1050, "actual"),
-        ("May 26", 1500, "actual"),
-        ("Jun 2", 1000, "actual"),
-        ("Jun 9", 1400, "actual"),
-        ("Jun 16", 1200, "actual"),
-        ("Jun 23", 1450, "forecast"),
-        ("Jun 30", 1230, "forecast"),
-    ],
-}
+APP_DIR = Path(__file__).resolve().parent
+DATA_PATH = APP_DIR / "data" / "weekly_store_orders.csv"
 
-logo = Path(__file__).parent / "tiller_logo.png"
+@st.cache_data
+def load_weekly_orders(path: Path) -> pd.DataFrame:
+    df = pd.read_csv(path, parse_dates=["week"])
+    df["id_store"] = df["id_store"].astype(str)
+    df["orders"] = pd.to_numeric(df["orders"], errors="coerce")
+    return df.dropna(subset=["week", "orders"]).sort_values(["id_store", "week"])
+
+if not DATA_PATH.exists():
+    st.error("App data is missing. Run `python3 prepare_app_data.py` from the repository root.")
+    st.stop()
+
+weekly = load_weekly_orders(DATA_PATH)
+
+store_summary = (
+    weekly.groupby("id_store")["orders"]
+    .agg(total_orders="sum", observed_weeks="count")
+    .query("observed_weeks >= 12")
+    .sort_values("total_orders", ascending=False)
+)
+
+if store_summary.empty:
+    st.error("No store has enough weekly history to create the forecast.")
+    st.stop()
+
+# Demo design: one store/account only, chosen internally.
+# Use the highest-volume eligible store so the UI has a complete weekly history.
+STORE_ID = store_summary.index[0]
+store = weekly.loc[weekly["id_store"] == STORE_ID].copy().sort_values("week")
+
+if len(store) < 6:
+    st.error("The selected store has insufficient history for this prototype.")
+    st.stop()
+
+latest_week = store["week"].max()
+latest_actual = int(store.iloc[-1]["orders"])
+previous_week = int(store.iloc[-2]["orders"])
+two_weeks_ago = int(store.iloc[-3]["orders"])
+
+# Phase 3-aligned prototype rules:
+# next week = previous observed week's demand;
+# following week = demand two weeks before the latest observed week.
+next_week_forecast = latest_actual
+following_week_forecast = two_weeks_ago
+two_week_total = next_week_forecast + following_week_forecast
+
+baseline_next_week = previous_week
+baseline_following_week = int(store.iloc[-4]["orders"]) if len(store) >= 4 else two_weeks_ago
+baseline_two_week = baseline_next_week + baseline_following_week
+
+def pct_change(current: float, baseline: float) -> float:
+    if baseline == 0:
+        return 0.0
+    return ((current - baseline) / baseline) * 100
+
+next_week_change = pct_change(next_week_forecast, baseline_next_week)
+following_week_change = pct_change(following_week_forecast, baseline_following_week)
+total_change = pct_change(two_week_total, baseline_two_week)
+
+next_week_date = latest_week + pd.Timedelta(days=7)
+following_week_date = latest_week + pd.Timedelta(days=14)
+
+# Navbar
+logo = APP_DIR / "tiller_logo.png"
 if logo.exists():
+    import base64
     b64 = base64.b64encode(logo.read_bytes()).decode()
     logo_html = f'<img src="data:image/png;base64,{b64}" width="132" height="36" style="display:block;object-fit:contain" />'
 else:
     logo_html = f'<span style="color:{BLUE};font-weight:700;letter-spacing:0.14em;font-size:18px">TILLER</span>'
 
-# Navbar: logo | separator | title   gap 24px — NO bottom border under nav
 left, right = st.columns([4, 2])
 with left:
     st.markdown(
@@ -63,20 +115,18 @@ with right:
     st.markdown(
         f"""
         <div style="display:flex;justify-content:flex-end;align-items:center;gap:12px;height:36px">
-          <span style="color:{BLACK};font-size:20px;font-weight:400">Cafe Lumiere</span>
+          <span style="color:{BLACK};font-size:20px;font-weight:400">Your store</span>
           <span style="width:36px;height:36px;border-radius:999px;background:{BLUE};color:white;
-            display:inline-flex;align-items:center;justify-content:center;font-size:16px;font-weight:500">CL</span>
+            display:inline-flex;align-items:center;justify-content:center;font-size:16px;font-weight:500">TS</span>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-# Space only — no horizontal rule under navbar
 st.markdown("<div style='height:24px'></div>", unsafe_allow_html=True)
 
-
 def forecast_card(title, value, pct, baseline, status_color, status_label, status_sub):
-    # Top block: padding 16 24 24 24, gap 24 between label and numbers
+    arrow = "↑" if pct >= 0 else "↓"
     return f"""
 <div style="border-radius:16px;overflow:hidden;background:#fff">
   <div style="
@@ -95,9 +145,9 @@ def forecast_card(title, value, pct, baseline, status_color, status_label, statu
       font-family:Roboto,system-ui,sans-serif">{title}</div>
     <div style="display:flex;align-items:flex-start;gap:12px;margin:0">
       <div style="color:{BLACK};font-size:56px;font-weight:700;line-height:1;
-        letter-spacing:-2px;margin:0;font-family:Roboto,system-ui,sans-serif">{value}</div>
+        letter-spacing:-2px;margin:0;font-family:Roboto,system-ui,sans-serif">{value:,}</div>
       <div style="display:flex;flex-direction:column;gap:2px;padding-top:6px">
-        <div style="color:{BLUE};font-size:16px;font-weight:500;line-height:1.2">↑ {pct}</div>
+        <div style="color:{BLUE};font-size:16px;font-weight:500;line-height:1.2">{arrow} {abs(pct):.1f}%</div>
         <div style="color:{BLUE};font-size:16px;font-weight:500;line-height:1.2">{baseline}</div>
       </div>
     </div>
@@ -123,8 +173,8 @@ with c1:
     st.markdown(
         forecast_card(
             "Expected orders · Next week",
-            "1,250",
-            "4.2%",
+            next_week_forecast,
+            next_week_change,
             "vs previous week",
             GREEN,
             "Stable",
@@ -136,8 +186,8 @@ with c2:
     st.markdown(
         forecast_card(
             "Expected orders · Next 2 weeks",
-            "2,480",
-            "3.1%",
+            two_week_total,
+            total_change,
             "vs previous 2-week period",
             AMBER,
             "Longer horizon",
@@ -152,38 +202,55 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-ax, ay, fx, fy, last = [], [], [], [], None
-for lab, y, t in DATA["series"]:
-    if t == "actual":
-        ax.append(lab)
-        ay.append(y)
-        last = (lab, y)
-    else:
-        if last and not fx:
-            fx.append(last[0])
-            fy.append(last[1])
-        fx.append(lab)
-        fy.append(y)
+# Chart: latest 12 actual weeks + 2 forecast weeks
+history = store.tail(12).copy()
+forecast_dates = [next_week_date, following_week_date]
+forecast_values = [next_week_forecast, following_week_forecast]
 
 fig = go.Figure()
+
 fig.add_trace(
     go.Scatter(
-        x=ax, y=ay, mode="lines+markers", name="Actual",
-        line=dict(color="#292E34", width=2.5), marker=dict(size=9, color="#292E34"),
+        x=history["week"],
+        y=history["orders"],
+        mode="lines+markers",
+        name="Actual",
+        line=dict(color="#292E34", width=2.5),
+        marker=dict(size=9, color="#292E34"),
+        hovertemplate="<b>%{x|%d %b %Y}</b><br>%{y:,} orders<br>Actual<extra></extra>",
     )
 )
+
 fig.add_trace(
     go.Scatter(
-        x=fx, y=fy, mode="lines+markers", name="Forecast",
-        line=dict(color=BLUE, width=2.5, dash="dash"), marker=dict(size=9, color=BLUE),
+        x=[history["week"].iloc[-1]] + forecast_dates,
+        y=[history["orders"].iloc[-1]] + forecast_values,
+        mode="lines+markers",
+        name="Forecast",
+        line=dict(color=BLUE, width=2.5, dash="dash"),
+        marker=dict(size=9, color=BLUE),
+        hovertemplate="<b>%{x|%d %b %Y}</b><br>%{y:,} orders<br>Forecast<extra></extra>",
     )
 )
-if last:
-    fig.add_vline(x=last[0], line_dash="dot", line_color="#9CA3AF")
-    fig.add_annotation(
-        x=last[0], y=1600, text="Today", showarrow=False,
-        bgcolor="black", font=dict(color="white", size=12),
-    )
+
+fig.add_vline(
+    x=history["week"].iloc[-1].timestamp() * 1000,
+    line_dash="dot",
+    line_color="#9CA3AF",
+    annotation_text="Latest actual",
+    annotation_position="top left",
+    annotation_font_color="#9CA3AF",
+)
+
+fig.add_vrect(
+    x0=next_week_date.timestamp() * 1000,
+    x1=(following_week_date + pd.Timedelta(days=7)).timestamp() * 1000,
+    fillcolor=BLUE,
+    opacity=0.06,
+    line_width=0,
+)
+
+max_y = max(history["orders"].max(), max(forecast_values))
 
 fig.update_layout(
     title=dict(text="Recent demand", font=dict(size=22, color=BLACK)),
@@ -192,13 +259,22 @@ fig.update_layout(
     paper_bgcolor="#FFFFFF",
     plot_bgcolor="#FFFFFF",
     legend=dict(orientation="h", y=-0.2, x=0.5, xanchor="center"),
-    xaxis=dict(showgrid=False, tickfont=dict(size=15, color=BLACK)),
-    yaxis=dict(range=[0, 2000], gridcolor="#E7E7E7", tickfont=dict(size=12, color=BLACK)),
+    hovermode="x unified",
+    xaxis=dict(showgrid=False, tickfont=dict(size=15, color=BLACK), tickformat="%d %b"),
+    yaxis=dict(
+        range=[0, max_y * 1.22],
+        gridcolor="#E7E7E7",
+        zeroline=False,
+        tickfont=dict(size=12, color=BLACK),
+        title="Orders",
+        title_font=dict(color=MUTED, size=11),
+    ),
 )
+
 st.plotly_chart(fig, width="stretch")
 
 st.caption(
-    "Forecasts are based on your store historical order patterns. "
-    "When recent demand becomes less stable, reliability will show caution. "
-    "Decision support only - no automated recommendations."
+    "Prototype uses a static historical dataset and a simple lag-based forecasting rule. "
+    "Forecasts are based on your store's historical order patterns. When recent demand becomes less stable, "
+    "reliability will show caution. Decision support only — no automated recommendations."
 )
