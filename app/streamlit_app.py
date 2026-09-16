@@ -84,6 +84,7 @@ following_week_change = pct_change(following_week_forecast, baseline_following_w
 total_change = pct_change(two_week_total, baseline_two_week)
 
 # Reliability state based on Phase 3 H6 threshold (41.9%)
+# Note: Threshold from retrospective test-period analysis
 wow_change = abs(next_week_change)
 H6_THRESHOLD = 41.9
 
@@ -200,7 +201,7 @@ with c2:
             "vs previous 2-week period",
             AMBER,
             "Longer horizon",
-            "Typically less accurate than 1-week",
+            "Phase 3: higher error at 2-week horizon",
         ),
         unsafe_allow_html=True,
     )
